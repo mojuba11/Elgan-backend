@@ -7,7 +7,6 @@ const Entry = require('../models/Entry');
 const auth = require('../middleware/auth');
 
 // --- DIRECTORY SYNC ---
-// This ensures the 'uploads' folder exists on Render's server so Multer doesn't crash
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -39,18 +38,17 @@ const upload = multer({
 
 /**
  * @route   POST /api/entries/add
+ * @desc    Save digitized manifest with full shipping details
  */
 router.post('/add', auth, upload.single('manifestScan'), async (req, res) => {
     try {
-        // Handle both raw JSON and FormData 'data' strings
-        let bodyData = req.body;
-        if (req.body.data) {
-            bodyData = JSON.parse(req.body.data);
-        }
+        // 1. Parse Data
+        // If frontend sends as 'data' JSON string, parse it. Otherwise use req.body directly.
+        let bodyData = req.body.data ? JSON.parse(req.body.data) : req.body;
         
         const { volume, wasteType } = bodyData;
 
-        // Business Logic: Revenue Calculation
+        // 2. Business Logic: Revenue Calculation
         const rates = {
             sludge: 150,
             plastic: 45,
@@ -59,12 +57,33 @@ router.post('/add', auth, upload.single('manifestScan'), async (req, res) => {
             hazardous: 250
         };
         const rate = rates[wasteType?.toLowerCase()] || 25; 
-        const amountMade = (volume || 0) * rate;
+        const amountMade = (parseFloat(volume) || 0) * rate;
 
+        // 3. Construct Entry Object
         const newEntry = new Entry({
-            ...bodyData,
+            // Vessel Info
+            vesselName: bodyData.vesselName,
+            vesselType: bodyData.vesselType,
+            imoNumber: bodyData.imoNumber,
+            mciNumber: bodyData.mciNumber,
+            chartererName: bodyData.chartererName,
+            
+            // Logistics info
+            terminal: bodyData.terminal,
+            dateOfArrival: bodyData.dateOfArrival,
+            dateOfInspection: bodyData.dateOfInspection,
+            
+            // Inspectors (Converting string "true"/"false" from FormData to Boolean)
+            nimasaInspector: bodyData.nimasaInspector === 'true' || bodyData.nimasaInspector === true,
+            xpoInspector: bodyData.xpoInspector === 'true' || bodyData.xpoInspector === true,
+            
+            // Waste Data
+            wasteType: wasteType,
+            volume: parseFloat(volume),
             amountMade: amountMade,
-            fileUrl: req.file ? req.file.filename : null, // Store just the filename
+            
+            // File & Auth
+            fileUrl: req.file ? req.file.filename : null,
             submittedBy: req.user.id 
         });
 
@@ -72,12 +91,13 @@ router.post('/add', auth, upload.single('manifestScan'), async (req, res) => {
         res.status(201).json(savedEntry);
     } catch (err) {
         console.error("Submission Error:", err.message);
-        res.status(500).json({ error: "Failed to save entry. Check fields." });
+        res.status(500).json({ error: "Failed to save entry. Check database connection or fields." });
     }
-});
+} );
 
 /**
  * @route   GET /api/entries/search
+ * @desc    Manager Audit Trail Search
  */
 router.get('/search', auth, async (req, res) => {
     try {
@@ -87,13 +107,13 @@ router.get('/search', auth, async (req, res) => {
         if (vesselName) query.vesselName = { $regex: vesselName, $options: 'i' };
         if (wasteType) query.wasteType = wasteType;
         if (startDate && endDate) {
-            query.entryDate = {
+            query.dateOfArrival = { // Changed to match arrival date for logistics audit
                 $gte: new Date(startDate),
                 $lte: new Date(endDate)
             };
         }
 
-        const entries = await Entry.find(query).sort({ createdAt: -1 });
+        const entries = await Entry.find(query).sort({ dateOfArrival: -1 });
         res.json(entries);
     } catch (err) {
         res.status(500).json({ error: "Search failed" });
@@ -109,6 +129,22 @@ router.get('/all', auth, async (req, res) => {
         res.json(entries);
     } catch (err) {
         res.status(500).json({ error: "Server Error" });
+    }
+});
+
+/**
+ * @route   DELETE /api/entries/:id
+ * @desc    Manager Deletion Route
+ */
+router.delete('/:id', auth, async (req, res) => {
+    try {
+        const entry = await Entry.findById(req.params.id);
+        if (!entry) return res.status(404).json({ msg: 'Record not found' });
+
+        await entry.deleteOne();
+        res.json({ msg: 'Record removed successfully' });
+    } catch (err) {
+        res.status(500).send('Server Error during deletion');
     }
 });
 
