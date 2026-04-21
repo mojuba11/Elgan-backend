@@ -6,30 +6,36 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 require('dotenv').config();
 
-// Import Routes
+// --- 1. IMPORT ROUTES ---
 const authRoutes = require('./routes/auth');
 const entryRoutes = require('./routes/entries');
+const financialRoutes = require('./routes/financials'); // NEW: Added financial route import
 
 // Import User Model for the setup route
 const User = require('./models/User');
 
 const app = express();
 
-// 1. DIRECTORY CHECK (Prevents Multer crashes)
+// --- 2. DIRECTORY CHECK (Prevents Multer crashes) ---
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// 2. SOLID MIDDLEWARE
+// --- 3. SOLID MIDDLEWARE ---
 app.use(express.json());
+
+// Updated CORS to be more explicit for Authorization headers
 app.use(cors({
     origin: "*", 
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// 3. DATABASE CONNECTION
+// NEW: Serve the uploads folder statically so frontend can see images/PDFs
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// --- 4. DATABASE CONNECTION ---
 const MONGO_URI = process.env.MONGO_URI;
 
 mongoose.connect(MONGO_URI)
@@ -38,11 +44,12 @@ mongoose.connect(MONGO_URI)
         console.error("❌ MongoDB Connection Failed:", err.message);
     });
 
-// 4. API ROUTES
+// --- 5. API ROUTES ---
 app.use('/api/auth', authRoutes);
 app.use('/api/entries', entryRoutes);
+app.use('/api/financials', financialRoutes); // NEW: Activated financial routes
 
-// 5. SETUP ROUTE (Run this once in browser to create admin)
+// --- 6. SETUP ROUTE (Run this once in browser to create admin) ---
 // URL: https://elgan-backend-2.onrender.com/setup-admin
 app.get('/setup-admin', async (req, res) => {
     try {
@@ -63,7 +70,7 @@ app.get('/setup-admin', async (req, res) => {
     }
 });
 
-// 6. HEALTH CHECK
+// --- 7. HEALTH CHECK ---
 app.get('/', (req, res) => {
     res.status(200).json({ 
         status: "Success", 
@@ -71,12 +78,12 @@ app.get('/', (req, res) => {
     });
 });
 
-// 7. GLOBAL 404 HANDLER
+// --- 8. GLOBAL 404 HANDLER ---
 app.use((req, res) => {
     res.status(404).json({ message: "Route not found" });
 });
 
-// 8. SERVER INITIALIZATION
+// --- 9. SERVER INITIALIZATION ---
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 ELGAN Server running on port ${PORT}`);
