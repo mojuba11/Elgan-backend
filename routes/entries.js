@@ -43,7 +43,6 @@ const upload = multer({
 router.post('/add', auth, upload.single('manifestScan'), async (req, res) => {
     try {
         // 1. Parse Data
-        // If frontend sends as 'data' JSON string, parse it. Otherwise use req.body directly.
         let bodyData = req.body.data ? JSON.parse(req.body.data) : req.body;
         
         const { volume, wasteType } = bodyData;
@@ -65,15 +64,16 @@ router.post('/add', auth, upload.single('manifestScan'), async (req, res) => {
             vesselName: bodyData.vesselName,
             vesselType: bodyData.vesselType,
             imoNumber: bodyData.imoNumber,
-            mciNumber: bodyData.mciNumber,
+            mciNumber: bodyData.mciNumber,       // Verified included
             chartererName: bodyData.chartererName,
+            agentName: bodyData.agentName,       // FIXED: Added Agent Name mapping
             
             // Logistics info
             terminal: bodyData.terminal,
             dateOfArrival: bodyData.dateOfArrival,
             dateOfInspection: bodyData.dateOfInspection,
             
-            // Inspectors (Converting string "true"/"false" from FormData to Boolean)
+            // Inspectors
             nimasaInspector: bodyData.nimasaInspector === 'true' || bodyData.nimasaInspector === true,
             xpoInspector: bodyData.xpoInspector === 'true' || bodyData.xpoInspector === true,
             
@@ -107,13 +107,13 @@ router.get('/search', auth, async (req, res) => {
         if (vesselName) query.vesselName = { $regex: vesselName, $options: 'i' };
         if (wasteType) query.wasteType = wasteType;
         if (startDate && endDate) {
-            query.dateOfArrival = { // Changed to match arrival date for logistics audit
-                $gte: new Date(startDate),
-                $lte: new Date(endDate)
+            query.dateOfArrival = { 
+                $gte: startDate,
+                $lte: endDate
             };
         }
 
-        const entries = await Entry.find(query).sort({ dateOfArrival: -1 });
+        const entries = await Entry.find(query).sort({ createdAt: -1 });
         res.json(entries);
     } catch (err) {
         res.status(500).json({ error: "Search failed" });
