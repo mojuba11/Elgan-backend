@@ -53,7 +53,7 @@ router.post('/add', auth, upload.single('manifestScan'), async (req, res) => {
             plastic: 45,
             food: 30,
             bilge: 110,
-            n/a: 250
+            hazardous: 250
         };
         const rate = rates[wasteType?.toLowerCase()] || 25; 
         const amountMade = (parseFloat(volume) || 0) * rate;
